@@ -246,7 +246,7 @@ public final class JVMEnhancer {
             // create classloader with executor to remove this protection domain
             // from access control
             VestigeClassLoader<Void> vestigeClassLoader = vestigeExecutor.createVestigeClassLoader(ClassLoader.getSystemClassLoader(),
-                    Collections.singletonList(Collections.<VestigeClassLoader<Void>> singletonList(null)), stringParser, stringParser, urls);
+                    Collections.singletonList(Collections.<VestigeClassLoader<Void>> singletonList(null)), stringParser, stringParser, null, urls);
 
             LOGGER.debug("Replacing java.lang.Thread.subclassAudits");
             try {
