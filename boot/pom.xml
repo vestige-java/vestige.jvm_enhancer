@@ -40,5 +40,10 @@
       <version>${vestige.core.version}</version>
       <scope>provided</scope>
     </dependency>
+      <dependency>
+        <groupId>${project.groupId}</groupId>
+        <artifactId>vestige.jpms</artifactId>
+        <version>${vestige.jpms.version}</version>
+      </dependency>
   </dependencies>
 </project>

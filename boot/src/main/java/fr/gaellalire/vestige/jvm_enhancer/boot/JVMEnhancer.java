@@ -44,9 +44,11 @@ import fr.gaellalire.vestige.core.StackedHandler;
 import fr.gaellalire.vestige.core.Vestige;
 import fr.gaellalire.vestige.core.VestigeClassLoader;
 import fr.gaellalire.vestige.core.executor.VestigeExecutor;
+import fr.gaellalire.vestige.core.executor.callable.InvokeMethod;
 import fr.gaellalire.vestige.core.function.Function;
 import fr.gaellalire.vestige.core.parser.NoStateStringParser;
 import fr.gaellalire.vestige.core.parser.StringParser;
+import fr.gaellalire.vestige.jpms.JPMSAccessorLoader;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.JULBackend;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.SystemProxySelector;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakArrayList;
@@ -134,12 +136,26 @@ public final class JVMEnhancer {
         }
     }
 
+    public static void runEnhancedMain(final String mainclass, final VestigeExecutor vestigeExecutor, final List<? extends ClassLoader> privilegedClassloaders,
+            final Function<Thread, Void, RuntimeException> addShutdownHook, final Function<Thread, Void, RuntimeException> removeShutdownHook, final String[] dargs)
+            throws Exception {
+        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        Class<?> loadClass = contextClassLoader.loadClass(mainclass);
+        try {
+            Method method = loadClass.getMethod("vestigeEnhancedCoreMain", VestigeExecutor.class, Function.class, Function.class, List.class, String[].class);
+            method.invoke(null, new Object[] {vestigeExecutor, addShutdownHook, removeShutdownHook, privilegedClassloaders, dargs});
+        } catch (NoSuchMethodException e) {
+            Vestige.runMain(contextClassLoader, mainclass, vestigeExecutor, dargs);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     public static void boot(final VestigeExecutor vestigeExecutor, final File directory, final Properties properties, final String mainClass, final String[] dargs)
             throws Exception {
         Thread thread = vestigeExecutor.createWorker("bootstrap-sun-worker", true, 0);
 
         ClassLoader systemClassLoader = ClassLoader.getSystemClassLoader();
+
         LOGGER.debug("Calling sun.awt.AppContext.getAppContext");
         try {
             // keep the context classloader in static field
@@ -385,13 +401,13 @@ public final class JVMEnhancer {
         runEnhancedMain(mainClass, vestigeExecutor, privilegedClassloaders, addShutdownHook, removeShutdownHook, dargs);
     }
 
-    public static void main(final String[] args) throws Exception {
-        vestigeCoreMain(new VestigeExecutor(), args);
-    }
-
     public static void vestigeCoreMain(final VestigeExecutor vestigeExecutor, final String[] args) throws Exception {
         if (args.length == 0) {
             throw new IllegalArgumentException("Expecting at least 3 arg : directory, properties, mainClass");
+        }
+        if (JPMSAccessorLoader.INSTANCE != null) {
+            JPMSAccessorLoader.INSTANCE.findBootModule("java.desktop").addExports("sun.awt", InvokeMethod.class);
+            JPMSAccessorLoader.INSTANCE.findBootModule("java.base").addExports("sun.security.jca", InvokeMethod.class);
         }
         String[] dargs = new String[args.length - 3];
         System.arraycopy(args, 3, dargs, 0, dargs.length);
@@ -405,18 +421,8 @@ public final class JVMEnhancer {
         boot(vestigeExecutor, new File(args[0]), properties, args[2], dargs);
     }
 
-    public static void runEnhancedMain(final String mainclass, final VestigeExecutor vestigeExecutor, final List<? extends ClassLoader> privilegedClassloaders,
-            final Function<Thread, Void, RuntimeException> addShutdownHook, final Function<Thread, Void, RuntimeException> removeShutdownHook, final String[] dargs)
-            throws Exception {
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        Class<?> loadClass = contextClassLoader.loadClass(mainclass);
-        try {
-            Method method = loadClass.getMethod("vestigeEnhancedCoreMain", VestigeExecutor.class, Function.class, Function.class, List.class, String[].class);
-            method.invoke(null, new Object[] {vestigeExecutor, addShutdownHook, removeShutdownHook, privilegedClassloaders, dargs});
-        } catch (NoSuchMethodException e) {
-            Vestige.runMain(contextClassLoader, mainclass, vestigeExecutor, dargs);
-        }
-
+    public static void main(final String[] args) throws Exception {
+        vestigeCoreMain(new VestigeExecutor(), args);
     }
 
 }
