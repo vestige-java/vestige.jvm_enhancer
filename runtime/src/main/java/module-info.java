@@ -1,6 +1,6 @@
 module fr.gaellalire.vestige.jvm_enhancer.runtime {
 
-    requires java.logging;
+    requires static java.logging;
 
     requires fr.gaellalire.vestige.core;
 

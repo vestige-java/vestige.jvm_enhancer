@@ -42,29 +42,30 @@ import com.btr.proxy.util.Logger.LogBackEnd;
 
 import fr.gaellalire.vestige.core.StackedHandler;
 import fr.gaellalire.vestige.core.Vestige;
-import fr.gaellalire.vestige.core.VestigeClassLoader;
+import fr.gaellalire.vestige.core.VestigeClassLoaderConfiguration;
+import fr.gaellalire.vestige.core.VestigeCoreContext;
 import fr.gaellalire.vestige.core.executor.VestigeExecutor;
 import fr.gaellalire.vestige.core.executor.callable.InvokeMethod;
 import fr.gaellalire.vestige.core.function.Function;
 import fr.gaellalire.vestige.core.parser.NoStateStringParser;
 import fr.gaellalire.vestige.core.parser.StringParser;
+import fr.gaellalire.vestige.core.resource.JarFileResourceLocator;
+import fr.gaellalire.vestige.core.resource.VestigeResourceLocator;
+import fr.gaellalire.vestige.core.url.DelegateURLStreamHandlerFactory;
 import fr.gaellalire.vestige.jpms.JPMSAccessorLoader;
+import fr.gaellalire.vestige.jpms.JPMSModuleLayerAccessor;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.JULBackend;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.SystemProxySelector;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakArrayList;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakLevelMap;
-import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakSoftCache;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.windows.WindowsShutdownHook;
 
 /**
  * @author Gael Lalire
  */
-public final class JVMEnhancer {
+public class JVMEnhancer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(JVMEnhancer.class);
-
-    private JVMEnhancer() {
-    }
 
     private static Object getField(final Field field) throws Exception {
         Callable<Object> callable = new Callable<Object>() {
@@ -136,22 +137,109 @@ public final class JVMEnhancer {
         }
     }
 
-    public static void runEnhancedMain(final String mainclass, final VestigeExecutor vestigeExecutor, final List<? extends ClassLoader> privilegedClassloaders,
-            final Function<Thread, Void, RuntimeException> addShutdownHook, final Function<Thread, Void, RuntimeException> removeShutdownHook, final String[] dargs)
-            throws Exception {
+    private File directory;
+
+    private String mainClass;
+
+    private String[] dargs;
+
+    private VestigeCoreContext vestigeCoreContext;
+
+    private VestigeExecutor vestigeExecutor;
+
+    private List<? extends ClassLoader> privilegedClassloaders;
+
+    private Function<Thread, Void, RuntimeException> addShutdownHook;
+
+    private Function<Thread, Void, RuntimeException> removeShutdownHook;
+
+    public void runEnhancedMain() throws Exception {
         ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        Class<?> loadClass = contextClassLoader.loadClass(mainclass);
+        Class<?> loadClass = contextClassLoader.loadClass(mainClass);
         try {
-            Method method = loadClass.getMethod("vestigeEnhancedCoreMain", VestigeExecutor.class, Function.class, Function.class, List.class, String[].class);
-            method.invoke(null, new Object[] {vestigeExecutor, addShutdownHook, removeShutdownHook, privilegedClassloaders, dargs});
+            Method method = loadClass.getMethod("vestigeEnhancedCoreMain", VestigeCoreContext.class, Function.class, Function.class, List.class, String[].class);
+            method.invoke(null, new Object[] {vestigeCoreContext, addShutdownHook, removeShutdownHook, privilegedClassloaders, dargs});
         } catch (NoSuchMethodException e) {
-            Vestige.runMain(contextClassLoader, mainclass, vestigeExecutor, dargs);
+            Vestige.runMain(contextClassLoader, mainClass, vestigeCoreContext, dargs);
         }
     }
 
+    public JVMEnhancer(final File directory, final VestigeCoreContext vestigeCoreContext, final String mainClass, final String[] dargs) {
+        this.directory = directory;
+        this.vestigeCoreContext = vestigeCoreContext;
+        vestigeExecutor = vestigeCoreContext.getVestigeExecutor();
+        this.mainClass = mainClass;
+        this.dargs = dargs;
+    }
+
+    public String getMainClass() {
+        return mainClass;
+    }
+
+    public void setMainClass(final String mainClass) {
+        this.mainClass = mainClass;
+    }
+
+    public String[] getDargs() {
+        return dargs;
+    }
+
+    public VestigeCoreContext getVestigeCoreContext() {
+        return vestigeCoreContext;
+    }
+
+    public VestigeExecutor getVestigeExecutor() {
+        return vestigeCoreContext.getVestigeExecutor();
+    }
+
+    public Function<Thread, Void, RuntimeException> getAddShutdownHook() {
+        return addShutdownHook;
+    }
+
+    public Function<Thread, Void, RuntimeException> getRemoveShutdownHook() {
+        return removeShutdownHook;
+    }
+
+    public List<? extends ClassLoader> getPrivilegedClassloaders() {
+        return privilegedClassloaders;
+    }
+
+    public File getDirectory() {
+        return directory;
+    }
+
+    public ClassLoader createClassLoader(final String runtimePaths) throws Exception {
+        List<File> urlList = new ArrayList<File>();
+        Vestige.addClasspath(directory, urlList, runtimePaths);
+        VestigeResourceLocator[] urls = new VestigeResourceLocator[urlList.size()];
+        int i = 0;
+        for (File file : urlList) {
+            urls[i] = new JarFileResourceLocator(file);
+            i++;
+        }
+        StringParser stringParser = new NoStateStringParser(0);
+        // create classloader with executor to remove this protection domain from access control
+        VestigeClassLoaderConfiguration[][] vestigeClassLoaderConfigurationsArray = new VestigeClassLoaderConfiguration[1][];
+        vestigeClassLoaderConfigurationsArray[0] = new VestigeClassLoaderConfiguration[] {VestigeClassLoaderConfiguration.THIS_PARENT_SEARCHED};
+        return vestigeExecutor.createVestigeClassLoader(ClassLoader.getSystemClassLoader(), vestigeClassLoaderConfigurationsArray, stringParser, stringParser, null, urls);
+    }
+
     @SuppressWarnings("unchecked")
-    public static void boot(final VestigeExecutor vestigeExecutor, final File directory, final Properties properties, final String mainClass, final String[] dargs)
-            throws Exception {
+    public void boot(final String propertyPath) throws Exception {
+        if (JPMSAccessorLoader.INSTANCE != null) {
+            JPMSModuleLayerAccessor bootLayer = JPMSAccessorLoader.INSTANCE.bootLayer();
+            bootLayer.findModule("java.desktop").addExports("sun.awt", InvokeMethod.class);
+            bootLayer.findModule("java.base").addExports("sun.security.jca", InvokeMethod.class);
+        }
+
+        Properties properties = new Properties();
+        FileInputStream fileInputStream = new FileInputStream(propertyPath);
+        try {
+            properties.load(fileInputStream);
+        } finally {
+            fileInputStream.close();
+        }
+
         Thread thread = vestigeExecutor.createWorker("bootstrap-sun-worker", true, 0);
 
         ClassLoader systemClassLoader = ClassLoader.getSystemClassLoader();
@@ -245,29 +333,17 @@ public final class JVMEnhancer {
             LOGGER.trace("com.sun.jndi.ldap.LdapPoolManager load failed", e);
         }
 
-        List<? extends ClassLoader> privilegedClassloaders;
         String runtimePaths = properties.getProperty("runtime.jar");
-        List<URL> urlList = new ArrayList<URL>();
-        Vestige.addClasspath(directory, urlList, runtimePaths);
-
-        Function<Thread, Void, RuntimeException> addShutdownHook = null;
-        Function<Thread, Void, RuntimeException> removeShutdownHook = null;
 
         if (runtimePaths == null) {
             privilegedClassloaders = Collections.emptyList();
         } else {
-            URL[] urls = new URL[urlList.size()];
-            urlList.toArray(urls);
-            StringParser stringParser = new NoStateStringParser(0);
-            // create classloader with executor to remove this protection domain
-            // from access control
-            VestigeClassLoader<Void> vestigeClassLoader = vestigeExecutor.createVestigeClassLoader(ClassLoader.getSystemClassLoader(),
-                    Collections.singletonList(Collections.<VestigeClassLoader<Void>> singletonList(null)), stringParser, stringParser, null, urls);
+            ClassLoader vestigeClassLoader = createClassLoader(runtimePaths);
 
             LOGGER.debug("Replacing java.lang.Thread.subclassAudits");
             try {
-                Class<?> weakSoftCacheClass = Class.forName(WeakSoftCache.class.getName());
-                setField(Thread.class.getDeclaredField("subclassAudits"), weakSoftCacheClass.newInstance());
+                Class<?> weakSoftCacheClass = Class.forName("fr.gaellalire.vestige.jvm_enhancer.runtime.WeakSoftCache");
+                setField(Thread.class.getDeclaredField("subclassAudits"), weakSoftCacheClass.getConstructor().newInstance());
             } catch (Exception e) {
                 LOGGER.trace("java.lang.Thread.subclassAudits replacement failed", e);
             } catch (NoClassDefFoundError e) {
@@ -363,11 +439,11 @@ public final class JVMEnhancer {
                     // redirect log to JUL
                     Class<?> julBackendClass = vestigeClassLoader.loadClass(JULBackend.class.getName());
                     Class<?> loggerClass = vestigeClassLoader.loadClass(com.btr.proxy.util.Logger.class.getName());
-                    loggerClass.getMethod("setBackend", vestigeClassLoader.loadClass(LogBackEnd.class.getName())).invoke(null, julBackendClass.newInstance());
+                    loggerClass.getMethod("setBackend", vestigeClassLoader.loadClass(LogBackEnd.class.getName())).invoke(null, julBackendClass.getConstructor().newInstance());
 
                     ProxySelector proxySelector = ProxySelector.getDefault();
                     Class<?> systemProxySelectorClass = vestigeClassLoader.loadClass(SystemProxySelector.class.getName());
-                    Object systemProxySelector = systemProxySelectorClass.newInstance();
+                    Object systemProxySelector = systemProxySelectorClass.getConstructor().newInstance();
                     ((StackedHandler<ProxySelector>) systemProxySelector).setNextHandler(proxySelector);
                     ProxySelector.setDefault((ProxySelector) systemProxySelector);
                 }
@@ -398,31 +474,22 @@ public final class JVMEnhancer {
         thread.interrupt();
         thread.join();
 
-        runEnhancedMain(mainClass, vestigeExecutor, privilegedClassloaders, addShutdownHook, removeShutdownHook, dargs);
+        runEnhancedMain();
     }
 
-    public static void vestigeCoreMain(final VestigeExecutor vestigeExecutor, final String[] args) throws Exception {
+    public static void vestigeCoreMain(final VestigeCoreContext vestigeCoreContext, final String[] args) throws Exception {
         if (args.length == 0) {
             throw new IllegalArgumentException("Expecting at least 3 arg : directory, properties, mainClass");
         }
-        if (JPMSAccessorLoader.INSTANCE != null) {
-            JPMSAccessorLoader.INSTANCE.findBootModule("java.desktop").addExports("sun.awt", InvokeMethod.class);
-            JPMSAccessorLoader.INSTANCE.findBootModule("java.base").addExports("sun.security.jca", InvokeMethod.class);
-        }
         String[] dargs = new String[args.length - 3];
         System.arraycopy(args, 3, dargs, 0, dargs.length);
-        Properties properties = new Properties();
-        FileInputStream fileInputStream = new FileInputStream(args[1]);
-        try {
-            properties.load(fileInputStream);
-        } finally {
-            fileInputStream.close();
-        }
-        boot(vestigeExecutor, new File(args[0]), properties, args[2], dargs);
+        new JVMEnhancer(new File(args[0]), vestigeCoreContext, args[2], dargs).boot(args[1]);
     }
 
     public static void main(final String[] args) throws Exception {
-        vestigeCoreMain(new VestigeExecutor(), args);
+        DelegateURLStreamHandlerFactory streamHandlerFactory = new DelegateURLStreamHandlerFactory();
+        URL.setURLStreamHandlerFactory(streamHandlerFactory);
+        vestigeCoreMain(new VestigeCoreContext(streamHandlerFactory, new VestigeExecutor()), args);
     }
 
 }

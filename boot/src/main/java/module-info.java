@@ -10,6 +10,8 @@ module fr.gaellalire.vestige.jvm_enhancer.boot {
 
     requires fr.gaellalire.vestige.proxy_vole;
 
-    requires java.logging;
+    requires static java.logging;
+    
+    exports fr.gaellalire.vestige.jvm_enhancer.boot;
 
 }

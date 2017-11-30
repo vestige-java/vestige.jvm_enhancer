@@ -10,6 +10,16 @@
   <name>Vestige :: JVM Enhancer :: Boot</name>
   <build>
     <defaultGoal>install</defaultGoal>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <artifactId>maven-javadoc-plugin</artifactId>
+          <configuration>
+            <skip>true</skip>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -19,8 +29,22 @@
             <goals>
               <goal>check</goal>
             </goals>
+            <configuration>
+              <excludes>module-info.java,fr/gaellalire/vestige/jvm_enhancer/boot/JPMSJVMEnhancer.java</excludes>
+            </configuration>
           </execution>
         </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <source>1.6</source>
+          <target>1.6</target>
+          <excludes>
+            <exclude>module-info.java</exclude>
+            <exclude>fr/gaellalire/vestige/jvm_enhancer/boot/JPMSJVMEnhancer.java</exclude>
+          </excludes>
+        </configuration>
       </plugin>
     </plugins>
   </build>
@@ -40,10 +64,60 @@
       <version>${vestige.core.version}</version>
       <scope>provided</scope>
     </dependency>
-      <dependency>
-        <groupId>${project.groupId}</groupId>
-        <artifactId>vestige.jpms</artifactId>
-        <version>${vestige.jpms.version}</version>
-      </dependency>
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>vestige.jpms</artifactId>
+      <version>${vestige.jpms.version}</version>
+    </dependency>
   </dependencies>
+  <profiles>
+    <profile>
+      <id>java9</id>
+      <build>
+        <resources>
+          <resource>
+            <directory>${project.basedir}/src/main/resources</directory>
+            <excludes>
+              <exclude>module-info.class</exclude>
+              <exclude>fr/gaellalire/vestige/jvm_enhancer/boot/JPMSJVMEnhancer.class</exclude>
+            </excludes>
+          </resource>
+        </resources>
+        <plugins>
+          <plugin>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <configuration>
+              <source>9</source>
+              <target>9</target>
+              <excludes combine.self="override">
+              </excludes>
+            </configuration>
+          </plugin>
+          <plugin>
+            <artifactId>maven-resources-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>update-module-info</id>
+                <phase>compile</phase>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <configuration>
+                  <resources>
+                    <resource>
+                      <directory>${project.build.outputDirectory}</directory>
+                      <include>module-info.class</include>
+                      <include>fr/gaellalire/vestige/jvm_enhancer/boot/JPMSJVMEnhancer.class</include>
+                      <filtering>false</filtering>
+                    </resource>
+                  </resources>
+                  <outputDirectory>${project.basedir}/src/main/resources</outputDirectory>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
