@@ -86,7 +86,7 @@ public class JPMSJVMEnhancer extends JVMEnhancer {
 
         JPMSVestige.createEnforcerConfiguration(moduleNamesByFile, moduleNameByPackageName, encapsulatedPackageNames, configuration);
         for (Path path : paths) {
-            moduleNames.add(moduleNamesByFile.get(path.toFile()));
+            moduleNames.add(moduleNamesByFile.get(path.toFile().getAbsoluteFile()));
         }
 
         StringParser classStringParser = new NoStateStringParser(0);
