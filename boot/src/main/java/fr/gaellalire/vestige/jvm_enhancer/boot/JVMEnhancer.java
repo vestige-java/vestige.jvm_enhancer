@@ -53,10 +53,12 @@ import fr.gaellalire.vestige.core.resource.JarFileResourceLocator;
 import fr.gaellalire.vestige.core.resource.VestigeResourceLocator;
 import fr.gaellalire.vestige.core.url.DelegateURLStreamHandlerFactory;
 import fr.gaellalire.vestige.jpms.JPMSAccessorLoader;
+import fr.gaellalire.vestige.jpms.JPMSModuleAccessor;
 import fr.gaellalire.vestige.jpms.JPMSModuleLayerAccessor;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.JULBackend;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.SystemProxySelector;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakArrayList;
+import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakIdentityHashMap;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakLevelMap;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.windows.WindowsShutdownHook;
 
@@ -85,7 +87,7 @@ public class JVMEnhancer {
             }
         };
         if (Modifier.isFinal(field.getModifiers())) {
-            return unsetFinalField(field, callable);
+            return FinalUnsetter.unsetFinalField(field, callable);
         } else {
             return callable.call();
         }
@@ -110,30 +112,9 @@ public class JVMEnhancer {
             }
         };
         if (Modifier.isFinal(field.getModifiers())) {
-            unsetFinalField(field, callable);
+            FinalUnsetter.unsetFinalField(field, callable);
         } else {
             callable.call();
-        }
-    }
-
-    private static Object unsetFinalField(final Field field, final Callable<Object> callable) throws Exception {
-        Field modifiersField = Field.class.getDeclaredField("modifiers");
-        boolean accessible = modifiersField.isAccessible();
-        if (!accessible) {
-            modifiersField.setAccessible(true);
-        }
-        try {
-            int modifiers = field.getModifiers();
-            modifiersField.setInt(field, modifiers & ~Modifier.FINAL);
-            try {
-                return callable.call();
-            } finally {
-                modifiersField.setInt(field, modifiers);
-            }
-        } finally {
-            if (!accessible) {
-                modifiersField.setAccessible(false);
-            }
         }
     }
 
@@ -229,15 +210,20 @@ public class JVMEnhancer {
         if (JPMSAccessorLoader.INSTANCE != null) {
             JPMSModuleLayerAccessor bootLayer = JPMSAccessorLoader.INSTANCE.bootLayer();
             bootLayer.findModule("java.desktop").addExports("sun.awt", InvokeMethod.class);
-            bootLayer.findModule("java.base").addExports("sun.security.jca", InvokeMethod.class);
+            JPMSModuleAccessor javaBaseModule = bootLayer.findModule("java.base");
+            javaBaseModule.addExports("sun.security.jca", InvokeMethod.class);
+            javaBaseModule.addOpens("java.lang.reflect", JVMEnhancer.class);
+            javaBaseModule.addOpens("javax.crypto", JVMEnhancer.class);
         }
 
         Properties properties = new Properties();
-        FileInputStream fileInputStream = new FileInputStream(propertyPath);
-        try {
-            properties.load(fileInputStream);
-        } finally {
-            fileInputStream.close();
+        if (propertyPath.length() != 0) {
+            FileInputStream fileInputStream = new FileInputStream(propertyPath);
+            try {
+                properties.load(fileInputStream);
+            } finally {
+                fileInputStream.close();
+            }
         }
 
         Thread thread = vestigeExecutor.createWorker("bootstrap-sun-worker", true, 0);
@@ -246,7 +232,9 @@ public class JVMEnhancer {
 
         LOGGER.debug("Calling sun.awt.AppContext.getAppContext");
         try {
-            // keep the context classloader in static field
+            // synchronization issue with -XstartOnFirstThread (java.awt.Toolkit needs to be loaded by first thread)
+            Class.forName("java.awt.Toolkit", true, systemClassLoader);
+            // keep the context classloader in static field (mainAppContext.contextClassLoader)
             Class<?> appContextClass = vestigeExecutor.classForName(systemClassLoader, "sun.awt.AppContext");
             vestigeExecutor.invoke(systemClassLoader, appContextClass.getMethod("getAppContext"), null);
         } catch (Exception e) {
@@ -340,9 +328,30 @@ public class JVMEnhancer {
         } else {
             ClassLoader vestigeClassLoader = createClassLoader(runtimePaths);
 
+            LOGGER.debug("Replacing javax.crypto.JceSecurity.verificationResults");
+            try {
+                Class<?> weakIdentityHashMapClass = vestigeClassLoader.loadClass(WeakIdentityHashMap.class.getName());
+                setField(Class.forName("javax.crypto.JceSecurity").getDeclaredField("verificationResults"), weakIdentityHashMapClass.getConstructor().newInstance());
+            } catch (Exception e) {
+                LOGGER.trace("javax.crypto.JceSecurity.verificationResults replacement failed", e);
+            } catch (NoClassDefFoundError e) {
+                LOGGER.trace("javax.crypto.JceSecurity.verificationResults replacement failed", e);
+            }
+
+            LOGGER.debug("Replacing javax.crypto.JceSecurity.verifyingProviders");
+            try {
+                Class<?> weakIdentityHashMapClass = vestigeClassLoader.loadClass(WeakIdentityHashMap.class.getName());
+                setField(Class.forName("javax.crypto.JceSecurity").getDeclaredField("verifyingProviders"), weakIdentityHashMapClass.getConstructor().newInstance());
+            } catch (Exception e) {
+                LOGGER.trace("javax.crypto.JceSecurity.verifyingProviders replacement failed", e);
+            } catch (NoClassDefFoundError e) {
+                LOGGER.trace("javax.crypto.JceSecurity.verifyingProviders replacement failed", e);
+            }
+
             LOGGER.debug("Replacing java.lang.Thread.subclassAudits");
             try {
-                Class<?> weakSoftCacheClass = Class.forName("fr.gaellalire.vestige.jvm_enhancer.runtime.WeakSoftCache");
+                // WeakSoftCache is hard to compile : the .class is in resources
+                Class<?> weakSoftCacheClass = vestigeClassLoader.loadClass("fr.gaellalire.vestige.jvm_enhancer.runtime.WeakSoftCache");
                 setField(Thread.class.getDeclaredField("subclassAudits"), weakSoftCacheClass.getConstructor().newInstance());
             } catch (Exception e) {
                 LOGGER.trace("java.lang.Thread.subclassAudits replacement failed", e);
