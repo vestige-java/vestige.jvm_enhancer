@@ -95,10 +95,14 @@ public class JPMSJVMEnhancer extends JVMEnhancer {
 
         VestigeClassLoaderConfiguration[][] vestigeClassLoaderConfigurationsArray = new VestigeClassLoaderConfiguration[][] {
                 new VestigeClassLoaderConfiguration[] {VestigeClassLoaderConfiguration.THIS_PARENT_SEARCHED}};
-
+                
         // create classloader with executor to remove this protection domain from access control
-        return getVestigeExecutor().createVestigeClassLoader(ClassLoader.getSystemClassLoader(), vestigeClassLoaderConfigurationsArray, stringParser, resourceStringParser,
+        ClassLoader vestigeClassLoader = getVestigeExecutor().createVestigeClassLoader(ClassLoader.getSystemClassLoader(), vestigeClassLoaderConfigurationsArray, stringParser, resourceStringParser,
                 moduleEncapsulationEnforcer, urls);
+
+        ModuleLayer.defineModules(configuration, Collections.singletonList(boot), moduleName -> vestigeClassLoader);
+        
+        return vestigeClassLoader;
     }
 
     public void runEnhancedMain() throws Exception {

@@ -20,7 +20,7 @@
               <goal>check</goal>
             </goals>
             <configuration>
-              <excludes>module-info.java,fr/gaellalire/vestige/jvm_enhancer/runtime/WeakIdentityHashMap.java</excludes>
+              <excludes>module-info.java,fr/gaellalire/vestige/jvm_enhancer/runtime/WeakIdentityHashMap.java,fr/gaellalire/vestige/jvm_enhancer/runtime/WeakConcurrentHashMap.java</excludes>
             </configuration>
           </execution>
         </executions>
@@ -54,6 +54,11 @@
     <dependency>
       <groupId>fr.gaellalire.vestige</groupId>
       <artifactId>proxy_vole</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 </project>

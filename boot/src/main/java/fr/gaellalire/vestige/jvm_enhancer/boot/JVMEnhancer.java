@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 import org.slf4j.Logger;
@@ -60,6 +61,7 @@ import fr.gaellalire.vestige.jvm_enhancer.runtime.SystemProxySelector;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakArrayList;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakIdentityHashMap;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakLevelMap;
+import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakProviderConcurrentHashMap;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.windows.WindowsShutdownHook;
 
 /**
@@ -207,13 +209,16 @@ public class JVMEnhancer {
 
     @SuppressWarnings("unchecked")
     public void boot(final String propertyPath) throws Exception {
+        JPMSModuleAccessor javaBaseModule;
         if (JPMSAccessorLoader.INSTANCE != null) {
             JPMSModuleLayerAccessor bootLayer = JPMSAccessorLoader.INSTANCE.bootLayer();
             bootLayer.findModule("java.desktop").addExports("sun.awt", InvokeMethod.class);
-            JPMSModuleAccessor javaBaseModule = bootLayer.findModule("java.base");
+            javaBaseModule = bootLayer.findModule("java.base");
             javaBaseModule.addExports("sun.security.jca", InvokeMethod.class);
             javaBaseModule.addOpens("java.lang.reflect", JVMEnhancer.class);
             javaBaseModule.addOpens("javax.crypto", JVMEnhancer.class);
+        } else {
+            javaBaseModule = null;
         }
 
         Properties properties = new Properties();
@@ -330,8 +335,20 @@ public class JVMEnhancer {
 
             LOGGER.debug("Replacing javax.crypto.JceSecurity.verificationResults");
             try {
-                Class<?> weakIdentityHashMapClass = vestigeClassLoader.loadClass(WeakIdentityHashMap.class.getName());
-                setField(Class.forName("javax.crypto.JceSecurity").getDeclaredField("verificationResults"), weakIdentityHashMapClass.getConstructor().newInstance());
+                Field verificationResultsField = Class.forName("javax.crypto.JceSecurity").getDeclaredField("verificationResults");
+                if (getField(verificationResultsField) instanceof ConcurrentHashMap) {
+                    Class<?> weakProviderConcurrentHashMapClass = vestigeClassLoader.loadClass(WeakProviderConcurrentHashMap.class.getName());
+                    if (javaBaseModule != null) {
+                        // Properties
+                        javaBaseModule.addOpens("java.util", weakProviderConcurrentHashMapClass);
+                        // get provider field
+                        javaBaseModule.addOpens("javax.crypto", weakProviderConcurrentHashMapClass);
+                    }
+                    setField(verificationResultsField, weakProviderConcurrentHashMapClass.getConstructor().newInstance());
+                } else {
+                    Class<?> weakIdentityHashMapClass = vestigeClassLoader.loadClass(WeakIdentityHashMap.class.getName());
+                    setField(verificationResultsField, weakIdentityHashMapClass.getConstructor().newInstance());
+                }
             } catch (Exception e) {
                 LOGGER.trace("javax.crypto.JceSecurity.verificationResults replacement failed", e);
             } catch (NoClassDefFoundError e) {
