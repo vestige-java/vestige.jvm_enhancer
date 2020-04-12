@@ -201,8 +201,8 @@
     </snapshotRepository>
   </distributionManagement>
   <scm>
-    <connection>scm:git:git@gaellalire.fr:gaellalire/vestige.jvm_enhancer.git</connection>
-    <developerConnection>scm:git:git@gaellalire.fr:gaellalire/vestige.jvm_enhancer.git</developerConnection>
+    <connection>scm:git:git@gaellalire.fr:vestige/vestige.jvm_enhancer.git</connection>
+    <developerConnection>scm:git:git@gaellalire.fr:vestige/vestige.jvm_enhancer.git</developerConnection>
     <tag>HEAD</tag>
   </scm>
   <reporting>
