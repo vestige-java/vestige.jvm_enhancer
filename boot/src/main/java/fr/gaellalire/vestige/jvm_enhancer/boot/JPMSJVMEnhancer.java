@@ -36,7 +36,7 @@ import fr.gaellalire.vestige.core.JPMSVestige;
 import fr.gaellalire.vestige.core.ModuleEncapsulationEnforcer;
 import fr.gaellalire.vestige.core.VestigeClassLoaderConfiguration;
 import fr.gaellalire.vestige.core.VestigeCoreContext;
-import fr.gaellalire.vestige.core.executor.VestigeExecutor;
+import fr.gaellalire.vestige.core.executor.VestigeWorker;
 import fr.gaellalire.vestige.core.function.Function;
 import fr.gaellalire.vestige.core.parser.ListIndexStringParser;
 import fr.gaellalire.vestige.core.parser.NoStateStringParser;
@@ -44,7 +44,6 @@ import fr.gaellalire.vestige.core.parser.ResourceEncapsulationEnforcer;
 import fr.gaellalire.vestige.core.parser.StringParser;
 import fr.gaellalire.vestige.core.resource.JarFileResourceLocator;
 import fr.gaellalire.vestige.core.resource.VestigeResourceLocator;
-import fr.gaellalire.vestige.core.url.DelegateURLStreamHandlerFactory;
 
 /**
  * @author Gael Lalire
@@ -53,16 +52,12 @@ public class JPMSJVMEnhancer extends JVMEnhancer {
 
     private Controller controller;
 
-    private String mainModule;
-
-    public JPMSJVMEnhancer(final File directory, final VestigeCoreContext vestigeCoreContext, final String mainClass, final String[] dargs, final Controller controller,
-            final String mainModule) {
+    public JPMSJVMEnhancer(final File directory, final VestigeCoreContext vestigeCoreContext, final Class<?> mainClass, final String[] dargs, final Controller controller) {
         super(directory, vestigeCoreContext, mainClass, dargs);
         this.controller = controller;
-        this.mainModule = mainModule;
     }
 
-    public ClassLoader createClassLoader(final String runtimePaths) throws Exception {
+    public ClassLoader createClassLoader(final VestigeWorker vestigeWorker, final String runtimePaths) throws Exception {
         ModuleLayer boot = ModuleLayer.boot();
 
         List<Path> pathList = new ArrayList<Path>();
@@ -95,40 +90,28 @@ public class JPMSJVMEnhancer extends JVMEnhancer {
 
         VestigeClassLoaderConfiguration[][] vestigeClassLoaderConfigurationsArray = new VestigeClassLoaderConfiguration[][] {
                 new VestigeClassLoaderConfiguration[] {VestigeClassLoaderConfiguration.THIS_PARENT_SEARCHED}};
-                
+
         // create classloader with executor to remove this protection domain from access control
-        ClassLoader vestigeClassLoader = getVestigeExecutor().createVestigeClassLoader(ClassLoader.getSystemClassLoader(), vestigeClassLoaderConfigurationsArray, stringParser, resourceStringParser,
-                moduleEncapsulationEnforcer, urls);
+        ClassLoader vestigeClassLoader = vestigeWorker.createVestigeClassLoader(ClassLoader.getSystemClassLoader(), vestigeClassLoaderConfigurationsArray, stringParser,
+                resourceStringParser, moduleEncapsulationEnforcer, urls);
 
         ModuleLayer.defineModules(configuration, Collections.singletonList(boot), moduleName -> vestigeClassLoader);
-        
+
         return vestigeClassLoader;
     }
 
     public void runEnhancedMain() throws Exception {
-        Optional<Module> findModule = controller.layer().findModule(mainModule);
-        if (!findModule.isPresent()) {
-            throw new IllegalArgumentException("Module " + mainModule + " cannot be found");
-        }
-        Module module = findModule.get();
-        String mainClass = getMainClass();
-        if (mainClass == null) {
-            Optional<String> mainClassOptional = module.getDescriptor().mainClass();
-            if (!mainClassOptional.isPresent()) {
-                throw new IllegalArgumentException("Module " + mainModule + " has no main class");
-            }
-            mainClass = mainClassOptional.get();
-            setMainClass(mainClass);
-        }
-        controller.addReads(JPMSJVMEnhancer.class.getModule(), module);
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        Class<?> loadClass = contextClassLoader.loadClass(mainClass);
         try {
-            Method method = loadClass.getMethod("vestigeEnhancedCoreMain", VestigeCoreContext.class, Function.class, Function.class, List.class, Controller.class, String[].class);
+            Method method = getMainClass().getMethod("vestigeEnhancedCoreMain", VestigeCoreContext.class, Function.class, Function.class, List.class, Controller.class,
+                    String[].class);
             method.invoke(null, new Object[] {getVestigeCoreContext(), getAddShutdownHook(), getRemoveShutdownHook(), getPrivilegedClassloaders(), controller, getDargs()});
         } catch (NoSuchMethodException e) {
             super.runEnhancedMain();
         }
+    }
+
+    public void runMain() throws Exception {
+        JPMSVestige.runMain(null, getMainClass(), controller, getVestigeCoreContext(), getDargs());
     }
 
     public static void vestigeCoreMain(final Controller controller, final VestigeCoreContext vestigeCoreContext, final String[] args) throws Exception {
@@ -145,7 +128,26 @@ public class JPMSJVMEnhancer extends JVMEnhancer {
 
         String[] dargs = new String[args.length - 3];
         System.arraycopy(args, 3, dargs, 0, dargs.length);
-        new JPMSJVMEnhancer(new File(args[0]), vestigeCoreContext, mainClass, dargs, controller, mainModule).boot(args[1]);
+        Optional<Module> findModule;
+        if (controller == null) {
+            findModule = ModuleLayer.boot().findModule(mainModule);
+        } else {
+            findModule = controller.layer().findModule(mainModule);
+        }
+        if (!findModule.isPresent()) {
+            throw new IllegalArgumentException("Module " + mainModule + " cannot be found");
+        }
+        Module module = findModule.get();
+        controller.addReads(JPMSJVMEnhancer.class.getModule(), module);
+        if (mainClass == null) {
+            Optional<String> mainClassOptional = module.getDescriptor().mainClass();
+            if (!mainClassOptional.isPresent()) {
+                throw new IllegalArgumentException("Module " + mainModule + " has no main class");
+            }
+            mainClass = mainClassOptional.get();
+        }
+
+        new JPMSJVMEnhancer(new File(args[0]), vestigeCoreContext, module.getClassLoader().loadClass(mainClass), dargs, controller).boot(args[1]);
     }
 
     public static void vestigeCoreMain(final VestigeCoreContext vestigeCoreContext, final String[] args) throws Exception {
@@ -153,9 +155,9 @@ public class JPMSJVMEnhancer extends JVMEnhancer {
     }
 
     public static void main(final String[] args) throws Exception {
-        DelegateURLStreamHandlerFactory streamHandlerFactory = new DelegateURLStreamHandlerFactory();
-        URL.setURLStreamHandlerFactory(streamHandlerFactory);
-        vestigeCoreMain(new VestigeCoreContext(streamHandlerFactory, new VestigeExecutor()), args);
+        VestigeCoreContext vestigeCoreContext = VestigeCoreContext.buildDefaultInstance();
+        URL.setURLStreamHandlerFactory(vestigeCoreContext.getStreamHandlerFactory());
+        vestigeCoreMain(vestigeCoreContext, args);
     }
 
 }

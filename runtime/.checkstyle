@@ -1,14 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<fileset-config file-format-version="1.2.0" simple-config="true" sync-formatter="false">
+<fileset-config file-format-version="1.2.0" simple-config="false" sync-formatter="false">
   <local-check-config name="Vestige checkstyle" location="src/main/config/checkstyle_config.xml" type="project" description="">
     <additional-data name="protect-config-file" value="false"/>
   </local-check-config>
-  <fileset name="all" enabled="true" check-config-name="Vestige checkstyle" local="true">
-    <file-match-pattern match-pattern="." include-pattern="true"/>
+  <local-check-config name="maven-checkstyle-plugin default" location="file:/Users/gaellalire/git/vestige.jvm_enhancer/runtime/src/main/config/checkstyle_config.xml" type="remote" description="maven-checkstyle-plugin configuration default">
+    <property name="checkstyle.header.file" value="/Users/gaellalire/eclipse-workspace/.metadata/.plugins/org.eclipse.core.resources/.projects/vestige.jvm_enhancer.runtime/com.basistech.m2e.code.quality.checkstyleConfigurator/checkstyle-header-default.txt"/>
+    <property name="checkstyle.cache.file" value="${project_loc}/target/checkstyle-cachefile"/>
+  </local-check-config>
+  <fileset name="java-sources-default" enabled="true" check-config-name="maven-checkstyle-plugin default" local="true">
+    <file-match-pattern match-pattern="^src/main/java/.*\.java" include-pattern="true"/>
+    <file-match-pattern match-pattern="^src/main/java.*module-info\.java" include-pattern="false"/>
+    <file-match-pattern match-pattern="^src/main/java.*fr/gaellalire/vestige/jvm_enhancer/runtime/WeakIdentityHashMap\.java" include-pattern="false"/>
+    <file-match-pattern match-pattern="^src/main/java.*fr/gaellalire/vestige/jvm_enhancer/runtime/WeakConcurrentHashMap\.java" include-pattern="false"/>
   </fileset>
   <filter name="FilesFromPackage" enabled="true">
     <filter-data value="target"/>
   </filter>
-  <filter name="NonSrcDirs" enabled="true"/>
 </fileset-config>
