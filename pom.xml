@@ -2,7 +2,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>fr.gaellalire.vestige</groupId>
   <artifactId>vestige.jvm_enhancer</artifactId>
-  <version>4.0</version>
+  <version>4.1-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Vestige :: JVM Enhancer</name>
   <build>
@@ -203,7 +203,7 @@
   <scm>
     <connection>scm:git:git@gaellalire.fr:vestige/vestige.jvm_enhancer.git</connection>
     <developerConnection>scm:git:git@gaellalire.fr:vestige/vestige.jvm_enhancer.git</developerConnection>
-    <tag>vestige.jvm_enhancer-4.0</tag>
+    <tag>HEAD</tag>
   </scm>
   <reporting>
     <plugins>
