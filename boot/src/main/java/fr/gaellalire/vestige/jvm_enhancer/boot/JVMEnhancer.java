@@ -59,7 +59,9 @@ import fr.gaellalire.vestige.jpms.JPMSModuleLayerAccessor;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.JULBackend;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.SystemProxySelector;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakArrayList;
+import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakHashtable;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakIdentityHashMap;
+import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakJceSecurityHashMap;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakLevelMap;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.WeakProviderConcurrentHashMap;
 import fr.gaellalire.vestige.jvm_enhancer.runtime.windows.WindowsShutdownHook;
@@ -212,6 +214,7 @@ public class JVMEnhancer {
             javaBaseModule.addExports("sun.security.jca", InvokeMethod.class);
             javaBaseModule.addOpens("java.lang.reflect", JVMEnhancer.class);
             javaBaseModule.addOpens("javax.crypto", JVMEnhancer.class);
+            javaBaseModule.addOpens("java.net", JVMEnhancer.class);
         } else {
             javaBaseModule = null;
         }
@@ -350,6 +353,16 @@ public class JVMEnhancer {
                 LOGGER.trace("javax.crypto.JceSecurity.verificationResults replacement failed", e);
             }
 
+            LOGGER.debug("Replacing javax.crypto.JceSecurity.codeBaseCacheRef");
+            try {
+                Class<?> weakJceSecurityHashMapClass = vestigeClassLoader.loadClass(WeakJceSecurityHashMap.class.getName());
+                setField(Class.forName("javax.crypto.JceSecurity").getDeclaredField("codeBaseCacheRef"), weakJceSecurityHashMapClass.getConstructor().newInstance());
+            } catch (Exception e) {
+                LOGGER.trace("javax.crypto.JceSecurity.codeBaseCacheRef replacement failed", e);
+            } catch (NoClassDefFoundError e) {
+                LOGGER.trace("javax.crypto.JceSecurity.codeBaseCacheRef replacement failed", e);
+            }
+
             LOGGER.debug("Replacing javax.crypto.JceSecurity.verifyingProviders");
             try {
                 Class<?> weakIdentityHashMapClass = vestigeClassLoader.loadClass(WeakIdentityHashMap.class.getName());
@@ -358,6 +371,16 @@ public class JVMEnhancer {
                 LOGGER.trace("javax.crypto.JceSecurity.verifyingProviders replacement failed", e);
             } catch (NoClassDefFoundError e) {
                 LOGGER.trace("javax.crypto.JceSecurity.verifyingProviders replacement failed", e);
+            }
+
+            LOGGER.debug("Replacing java.net.URL.handlers");
+            try {
+                Class<?> weakHashtableClass = vestigeClassLoader.loadClass(WeakHashtable.class.getName());
+                setField(Class.forName("java.net.URL").getDeclaredField("handlers"), weakHashtableClass.getConstructor().newInstance());
+            } catch (Exception e) {
+                LOGGER.trace("java.net.URL.handlers replacement failed", e);
+            } catch (NoClassDefFoundError e) {
+                LOGGER.trace("java.net.URL.handlers replacement failed", e);
             }
 
             LOGGER.debug("Replacing java.lang.Thread.subclassAudits");
