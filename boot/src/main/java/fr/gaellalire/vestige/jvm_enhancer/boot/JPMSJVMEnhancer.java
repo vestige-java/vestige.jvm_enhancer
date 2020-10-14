@@ -34,6 +34,7 @@ import java.util.Set;
 
 import fr.gaellalire.vestige.core.JPMSVestige;
 import fr.gaellalire.vestige.core.ModuleEncapsulationEnforcer;
+import fr.gaellalire.vestige.core.Vestige;
 import fr.gaellalire.vestige.core.VestigeClassLoaderConfiguration;
 import fr.gaellalire.vestige.core.VestigeCoreContext;
 import fr.gaellalire.vestige.core.executor.VestigeWorker;
@@ -100,21 +101,21 @@ public class JPMSJVMEnhancer extends JVMEnhancer {
         return vestigeClassLoader;
     }
 
-    public void runEnhancedMain() throws Exception {
+    public Object runEnhancedMain() throws Exception {
         try {
             Method method = getMainClass().getMethod("vestigeEnhancedCoreMain", VestigeCoreContext.class, Function.class, Function.class, List.class, Controller.class,
                     String[].class);
-            method.invoke(null, new Object[] {getVestigeCoreContext(), getAddShutdownHook(), getRemoveShutdownHook(), getPrivilegedClassloaders(), controller, getDargs()});
+            return method.invoke(null, new Object[] {getVestigeCoreContext(), getAddShutdownHook(), getRemoveShutdownHook(), getPrivilegedClassloaders(), controller, getDargs()});
         } catch (NoSuchMethodException e) {
-            super.runEnhancedMain();
+            return super.runEnhancedMain();
         }
     }
 
-    public void runMain() throws Exception {
-        JPMSVestige.runMain(null, getMainClass(), controller, getVestigeCoreContext(), getDargs());
+    public Object runMain() throws Exception {
+        return JPMSVestige.runMain(null, getMainClass(), controller, getVestigeCoreContext(), getDargs());
     }
 
-    public static void vestigeCoreMain(final Controller controller, final VestigeCoreContext vestigeCoreContext, final String[] args) throws Exception {
+    public static Object vestigeCoreMain(final Controller controller, final VestigeCoreContext vestigeCoreContext, final String[] args) throws Exception {
         if (args.length == 0) {
             throw new IllegalArgumentException("Expecting at least 3 args : directory, properties, mainModule[/mainClass]");
         }
@@ -147,17 +148,17 @@ public class JPMSJVMEnhancer extends JVMEnhancer {
             mainClass = mainClassOptional.get();
         }
 
-        new JPMSJVMEnhancer(new File(args[0]), vestigeCoreContext, module.getClassLoader().loadClass(mainClass), dargs, controller).boot(args[1]);
+        return new JPMSJVMEnhancer(new File(args[0]), vestigeCoreContext, module.getClassLoader().loadClass(mainClass), dargs, controller).boot(args[1]);
     }
 
-    public static void vestigeCoreMain(final VestigeCoreContext vestigeCoreContext, final String[] args) throws Exception {
-        vestigeCoreMain(null, vestigeCoreContext, args);
+    public static Object vestigeCoreMain(final VestigeCoreContext vestigeCoreContext, final String[] args) throws Exception {
+        return vestigeCoreMain(null, vestigeCoreContext, args);
     }
 
     public static void main(final String[] args) throws Exception {
         VestigeCoreContext vestigeCoreContext = VestigeCoreContext.buildDefaultInstance();
         URL.setURLStreamHandlerFactory(vestigeCoreContext.getStreamHandlerFactory());
-        vestigeCoreMain(vestigeCoreContext, args);
+        Vestige.runCallableLoop(vestigeCoreMain(vestigeCoreContext, args));
     }
 
 }
